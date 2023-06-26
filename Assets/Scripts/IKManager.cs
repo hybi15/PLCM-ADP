@@ -11,6 +11,7 @@ public class IKManager : MonoBehaviour
     public GameObject[] Buttons;
     public BoxCollider[] ButtonColliders;
     public Color[] ButtonColors;
+    public Transform baseParent;
 
     public float SamplingDistance;
     public float LearningRate;
@@ -34,42 +35,52 @@ public class IKManager : MonoBehaviour
                 angles[i] = Joints[i].transform.localRotation.eulerAngles.z;                
         }
         Angles = angles;
-}
+    }
 
     public void Update()
-{
-    if (TargetObject)
     {
-        Vector3 localTargetPosition = transform.InverseTransformPoint(TargetObject.position);
-        InverseKinematics(localTargetPosition, Angles);
-        if (DistanceFromTarget(localTargetPosition, Angles) < DistanceThreshold)
+        if (TargetObject)
         {
-            TargetObject.parent = Joints[Joints.Length-1].transform; //parent the spawned object to last joint
-            TargetAttached = true;
-            TargetObject = null;
+            Vector3 localTargetPosition = transform.InverseTransformPoint(TargetObject.position);
+            InverseKinematics(localTargetPosition, Angles);
+            if (DistanceFromTarget(localTargetPosition, Angles) < DistanceThreshold)
+            {
+                TargetObject.parent = Joints[Joints.Length-1].transform; //parent the spawned object to last joint
+                TargetAttached = true;
+                TargetObject = null;
+            }
+        }
+        else
+        {
+            Vector3 localTargetPosition = transform.InverseTransformPoint(target.position);
+            InverseKinematics(localTargetPosition, Angles);
         }
     }
-    else
-    {
-        Vector3 localTargetPosition = transform.InverseTransformPoint(target.position);
-        InverseKinematics(localTargetPosition, Angles);
-    }
-}
 
-public Vector3 ForwardKinematics(float[] angles)
-{
-    Vector3 prevPoint = Vector3.zero;
-    Quaternion rotation = Quaternion.identity;
-    for (int i = 1; i < Joints.Length; i++)
+    public Vector3 ForwardKinematics(float[] angles)
     {
-        // Rotates around a new axis
-        rotation *= Quaternion.AngleAxis(angles[i - 1], Joints[i - 1].Axis);
-        Vector3 nextPoint = prevPoint + rotation * Joints[i].StartOffset;
-        prevPoint = nextPoint;
+        Vector3 prevPoint = Vector3.zero;
+        Quaternion rotation = Quaternion.identity;
+        rotation *= baseParent.transform.rotation;
+        for (int i = 1; i < Joints.Length; i++)
+        {
+            // Rotates around a new axis
+            rotation *= Quaternion.AngleAxis(angles[i - 1], Joints[i - 1].Axis);
+            Vector3 nextPoint = prevPoint + rotation * MultiplyMatricesByRows(Joints[i].StartOffset, baseParent.transform.lossyScale);
+            prevPoint = nextPoint;
+        }
+        return prevPoint;
     }
-    return prevPoint;
-}
 
+    public Vector3 MultiplyMatricesByRows(Vector3 matA, Vector3 matB)
+    {
+        float resultX = matA.x * matB.x;
+        float resultY = matA.y * matB.y;
+        float resultZ = matA.z * matB.z;
+    
+        return new Vector3(resultX, resultY, resultZ);
+    }
+    
     public float DistanceFromTarget(Vector3 target, float[] angles)
     {
         Vector3 point = ForwardKinematics (angles);
@@ -166,4 +177,5 @@ public Vector3 ForwardKinematics(float[] angles)
             }*/
         }
     }
+}
 }
