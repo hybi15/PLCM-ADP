@@ -14,9 +14,13 @@ public class ScaleRepositionPlayer : MonoBehaviour
         Player.transform.localScale = Vector3.one * Scale;
     }
 
-    private void ResetPlayerPosition()
+    public void ResetPlayer()
     {
-        if (Player == null) return;
+        if (Player == null)
+        {
+            Debug.Log("No Player found!");
+            return;
+        }
         // Reset position
         Vector3 offset = Camera.position - Player.position;
         offset.y = 0;
@@ -37,9 +41,17 @@ public class ScaleRepositionPlayer : MonoBehaviour
     {
         GameObject PlayerObj = GameObject.FindGameObjectWithTag("Player");
         Player = PlayerObj.transform;
-        GameObject CameraObj = GameObject.FindGameObjectsWithTag("MainCamera")[0];
+        GameObject CameraObj = GameObject.FindGameObjectWithTag("MainCamera");
         Camera = CameraObj.transform;
         Resize(PlayerObj);
-        ResetPlayerPosition();
+        ResetPlayer();
+    }
+
+    void Update()
+    {
+        if (Input.GetKeyDown("space") == true)
+        { 
+            ResetPlayer();
+        }
     }
 }
