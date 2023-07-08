@@ -1,18 +1,26 @@
-using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
+using Valve.VR;
+using Valve.VR.InteractionSystem;
 
-public class CustomUI : MonoBehaviour
+public class MyCustomUIElement : UIElement
 {
-    // Start is called before the first frame update
-    void Start()
+    public SteamVR_Action_Boolean interactWithUI = SteamVR_Input.GetBooleanAction("InteractWithUI");
+
+    protected override void HandHoverUpdate(Hand hand)
     {
-        
+        base.HandHoverUpdate(hand);
+
+        if (interactWithUI.GetStateDown(hand.handType))
+        {
+            OnButtonClick();
+        }
     }
 
-    // Update is called once per frame
-    void Update()
+    protected override void OnButtonClick()
     {
-        
+        base.OnButtonClick();
+
+        Debug.Log("wheeee!");
+        // Perform your button action here
     }
 }
