@@ -1,16 +1,14 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-using Valve.VR.InteractionSystem;
 
 public class IKManager : MonoBehaviour
 {
     public RobotJoint[] Joints;
     public Transform target;
     public Transform TargetObject;
-    public GameObject[] Buttons;
-    public BoxCollider[] ButtonColliders;
-    public Color[] ButtonColors;
+    public Transform baseParent;
+    public GripTillCollide gripperManager;
 
     public float SamplingDistance;
     public float LearningRate;
@@ -19,6 +17,8 @@ public class IKManager : MonoBehaviour
     public bool TargetAttached;
 
     public float[] Angles;
+
+    private Transform storedObject;
 
     public void Start()
     {
@@ -34,41 +34,67 @@ public class IKManager : MonoBehaviour
                 angles[i] = Joints[i].transform.localRotation.eulerAngles.z;                
         }
         Angles = angles;
-}
+    }
 
     public void Update()
-{
-    if (TargetObject)
     {
-        Vector3 localTargetPosition = transform.InverseTransformPoint(TargetObject.position);
-        InverseKinematics(localTargetPosition, Angles);
-        if (DistanceFromTarget(localTargetPosition, Angles) < DistanceThreshold)
+        if (TargetObject)
         {
-            TargetObject.parent = Joints[Joints.Length-1].transform; //parent the spawned object to last joint
-            TargetAttached = true;
-            TargetObject = null;
+            InverseKinematics(TargetObject.position, Angles);
+            if (DistanceFromTarget(TargetObject.position, Angles) < DistanceThreshold)
+            {
+                TargetObject.parent = Joints[Joints.Length - 1].transform; //parent the spawned object to last joint
+                gripperManager.enabled = true;
+            }
+        }
+        else
+        {
+            InverseKinematics(target.position, Angles);
+            if ((DistanceFromTarget(target.position, Angles) < DistanceThreshold) && storedObject.parent)
+            {
+                gripperManager.closed = true;
+                gripperManager.enabled = true;
+                storedObject.parent = null;
+            }
         }
     }
-    else
-    {
-        Vector3 localTargetPosition = transform.InverseTransformPoint(target.position);
-        InverseKinematics(localTargetPosition, Angles);
-    }
-}
 
-public Vector3 ForwardKinematics(float[] angles)
-{
-    Vector3 prevPoint = Vector3.zero;
-    Quaternion rotation = Quaternion.identity;
-    for (int i = 1; i < Joints.Length; i++)
+    public void TargetObjectGripped() // called by GripTillCollide after gripper closed in to target object
     {
-        // Rotates around a new axis
-        rotation *= Quaternion.AngleAxis(angles[i - 1], Joints[i - 1].Axis);
-        Vector3 nextPoint = prevPoint + rotation * Joints[i].StartOffset;
-        prevPoint = nextPoint;
+        gripperManager.enabled = false;
+        TargetAttached = true;
+        storedObject = TargetObject; // to be used to unparent object
+        TargetObject = null;
     }
-    return prevPoint;
-}
+
+    public Vector3 ForwardKinematics(float[] angles)
+    {
+        Vector3 prevPoint = Joints[0].transform.position;
+        Quaternion rotation = Quaternion.identity;
+        rotation *= baseParent.transform.rotation;
+        for (int i = 1; i < Joints.Length; i++)
+        {
+            // Rotates around a new axis
+            rotation *= Quaternion.AngleAxis(angles[i - 1], Joints[i - 1].Axis);
+            Vector3 nextPoint = prevPoint + rotation * MultiplyMatricesByRows(Joints[i].StartOffset, baseParent.transform.lossyScale);
+            prevPoint = nextPoint;
+            Debug.Log(i + "rotation: " + rotation.eulerAngles);
+            Debug.Log(i + "position: " + prevPoint);
+        }
+        Debug.Log(prevPoint);
+        return prevPoint;
+    }
+
+    // Multiply two matrices by rows
+    public Vector3 MultiplyMatricesByRows(Vector3 matA, Vector3 matB)
+    {
+        float resultX = matA.x * matB.x;
+        float resultY = matA.y * matB.y;
+        float resultZ = matA.z * matB.z;
+
+        return new Vector3(resultX, resultY, resultZ);
+    }
+
 
     public float DistanceFromTarget(Vector3 target, float[] angles)
     {
@@ -96,22 +122,10 @@ public Vector3 ForwardKinematics(float[] angles)
         return gradient;
     }
 
-    public void InverseKinematics(Vector3 localTarget, float[] angles)
+    public void InverseKinematics(Vector3 target, float[] angles)
     {
-        if (DistanceFromTarget(localTarget, angles) < DistanceThreshold)
+        if (DistanceFromTarget(target, angles) < DistanceThreshold)
         {
-            if (TargetAttached == true)
-            {
-                for (int i = 0; i < ButtonColliders.Length ; i++)
-                {
-                    ButtonColliders[i].enabled = true;
-                }
-                for (int i = 0; i < Buttons.Length; i++)
-                {
-                    Buttons[i].GetComponent<Renderer>().material.color = ButtonColors[i];
-                }
-                TargetAttached = false;
-            }
             return;
         }
 
@@ -119,7 +133,7 @@ public Vector3 ForwardKinematics(float[] angles)
         {
             // Gradient descent
             // Update : Solution -= LearningRate * Gradient
-            float gradient = PartialGradient(localTarget, angles, j);
+            float gradient = PartialGradient(target, angles, j);
             angles[j] -= LearningRate * gradient;
 
             // Clamp
@@ -130,29 +144,11 @@ public Vector3 ForwardKinematics(float[] angles)
 
 
             // Early termination
-            if (DistanceFromTarget(localTarget, angles) < DistanceThreshold) if (TargetAttached == true)
-            {
-                if (TargetAttached == true)
-                {
-                    for (int i = 0; i < ButtonColliders.Length; i++)
-                    {
-                        ButtonColliders[i].enabled = true;
-                    }
-                    TargetAttached = false;
-                    for (int i = 0; i < Buttons.Length; i++)
-                    {
-                        Buttons[i].GetComponent<Renderer>().material.color = ButtonColors[i];
-                    }
-                }
+            if (DistanceFromTarget(target, angles) < DistanceThreshold)
                 return;
-            }
 
             // Move joints
-            Vector3 localEulerAngles = Joints[j].transform.localEulerAngles;
-            Vector3 globalAxis = transform.TransformDirection(Joints[j].Axis);
-            Quaternion deltaRotation = Quaternion.AngleAxis(angles[j], globalAxis);
-            Joints[j].transform.rotation = transform.rotation * deltaRotation * Quaternion.Euler(localEulerAngles);
-            /*switch (Joints[j].RotationAxis)
+            switch (Joints[j].RotationAxis)
             {
                 case 'x':
                     Joints[j].transform.localEulerAngles = new Vector3(angles[j], Joints[j].transform.localRotation.eulerAngles.y, Joints[j].transform.localRotation.eulerAngles.z);
@@ -163,7 +159,7 @@ public Vector3 ForwardKinematics(float[] angles)
                 case 'z':
                     Joints[j].transform.localEulerAngles = new Vector3(Joints[j].transform.localRotation.eulerAngles.x, Joints[j].transform.localRotation.eulerAngles.y, angles[j]);
                     break;
-            }*/
+            }
         }
     }
 }
